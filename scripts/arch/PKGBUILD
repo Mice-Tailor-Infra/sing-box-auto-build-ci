@@ -1,0 +1,58 @@
+# Maintainer: CagedBird <cagedbird@private>
+# Template for sing-box-ref1nd (CI Generated)
+
+pkgname=_PKGNAME_  # CI 会替换这个 (sing-box-ref1nd 或 sing-box-ref1nd-dev)
+pkgver=_PKGVER_    # CI 会替换这个
+pkgrel=1
+pkgdesc="Universal proxy platform (reF1nd version, optimized for $_ARCH_OPTS_)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/reF1nd/sing-box"
+license=('GPL3')
+provides=('sing-box')
+conflicts=('sing-box' 'sing-box-bin' 'sing-box-git' 'sing-box-beta' 'sing-box-ref1nd' 'sing-box-ref1nd-dev')
+depends=('glibc')
+# 我们不需要 go 环境，因为二进制已经编译好了
+makedepends=('git') 
+
+# 为了获取 systemd/rules/completions 等文件，我们需要拉取源码
+# 注意：这里我们拉取对应的 tag 源码，仅用于提取辅助文件
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/SagerNet/sing-box/archive/v${pkgver}.tar.gz")
+sha256sums=('SKIP') # CI 环境跳过校验，或者是动态计算，这里为了简单直接 SKIP
+
+package() {
+    # 1. 准备辅助文件 (来自官方源码结构)
+    # 这里的目录名取决于解压后的文件夹，通常是 sing-box-版本号
+    # 如果是 dev 版本可能没有对应 tag 的 tarball，这里我们需要做个容错
+    # 在 CI 脚本里我们会处理源码解压后的目录名为 "src_aux"
+    
+    cd "${srcdir}/src_aux"
+
+    # 安装 License
+    install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
+    
+    # --- 核心：安装我们 CI 传进来的二进制 ---
+    # CI 脚本会把对应的二进制 (v3/v4/arm64) 放置在 ${srcdir}/sing-box-bin
+    install -Dm755 "${srcdir}/sing-box-bin" "$pkgdir/usr/bin/sing-box"
+
+    # 安装 Systemd 服务 & 配置
+    # 注意：我们使用官方的 service 文件，它通常指向 /etc/sing-box/config.json
+    install -Dm644 "release/config/config.json"            -t "$pkgdir/etc/sing-box"
+    install -Dm644 "release/config/sing-box.service"       -t "$pkgdir/usr/lib/systemd/system"
+    install -Dm644 "release/config/sing-box@.service"      -t "$pkgdir/usr/lib/systemd/system"
+    install -Dm644 "release/config/sing-box.sysusers"         "$pkgdir/usr/lib/sysusers.d/sing-box.conf"
+    
+    # 安装 Rules (Polkit & DBus)
+    install -Dm644 "release/config/sing-box.rules"         -t "$pkgdir/usr/share/polkit-1/rules.d"
+    
+    # 补全文件 (Completions) - 官方 PKGBUILD 是现场生成的
+    # 我们可以尝试运行二进制生成，或者直接不包含补全 (如果二进制运行环境受限)
+    # 为了稳妥，我们在打包时尝试运行一下二进制来生成补全
+    install -d completions
+    "$pkgdir/usr/bin/sing-box" completion bash > completions/bash 2>/dev/null || true
+    "$pkgdir/usr/bin/sing-box" completion fish > completions/fish 2>/dev/null || true
+    "$pkgdir/usr/bin/sing-box" completion zsh  > completions/zsh  2>/dev/null || true
+    
+    install -Dm644 completions/bash "${pkgdir}/usr/share/bash-completion/completions/sing-box"
+    install -Dm644 completions/fish "${pkgdir}/usr/share/fish/vendor_completions.d/sing-box.fish"
+    install -Dm644 completions/zsh  "${pkgdir}/usr/share/zsh/site-functions/_sing-box"
+}

@@ -130,3 +130,37 @@ jobs:
           name: sing-box reF1nd [${{ matrix.branch }}]
           body: "Source Branch: ${{ matrix.branch }}"
           files: dist/*
+
+  package_arch:
+      needs: [check, build]
+      runs-on: ubuntu-latest
+      container: archlinux:base-devel # 直接用 Arch 容器，自带 makepkg
+      strategy:
+        matrix:
+          branch: [reF1nd-main, reF1nd-dev]
+      steps:
+        - uses: actions/checkout@v4
+        
+        # 下载该分支下的所有 Artifacts (linux-amd64v3, linux-arm64 等)
+        - name: Download Artifacts
+          uses: actions/download-artifact@v4
+          with:
+            pattern: assets-${{ matrix.branch }}-*
+            path: artifacts
+            merge-multiple: true
+
+        - name: Install dependencies
+          run: pacman -Syu --noconfirm git wget sudo
+
+        - name: Build and Push Repo
+          env:
+            GH_TOKEN: ${{ secrets.REPO_TOKEN }} # 记得给 Token 写权限
+          run: |
+            # 获取版本号
+            if [ "${{ matrix.branch }}" == "reF1nd-main" ]; then
+              TAG=${{ needs.check.outputs.main_tag }}
+            else
+              TAG=${{ needs.check.outputs.dev_tag }}
+            fi
+            
+            bash scripts/arch/build_repo.sh "${{ matrix.branch }}" "$TAG" "$(pwd)/artifacts"
