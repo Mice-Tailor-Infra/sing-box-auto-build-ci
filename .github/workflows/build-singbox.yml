@@ -9,7 +9,6 @@ on:
     - cron: "0 19 * * *"
 
 jobs:
-  # 第一步：获取各分支对应的最新 Tag
   check:
     runs-on: ubuntu-latest
     outputs:
@@ -18,52 +17,44 @@ jobs:
     steps:
       - id: tags
         run: |
-          # 提取稳定版 Tag (用于 main)
           MAIN=$(git ls-remote --tags https://github.com/SagerNet/sing-box.git | grep -Po 'refs/tags/\Kv[0-9.]+$' | sort -V | tail -n1)
-          # 提取所有最新 Tag (用于 dev)
           DEV=$(git ls-remote --tags https://github.com/SagerNet/sing-box.git | grep -Po 'refs/tags/\Kv[0-9].*$' | sort -V | tail -n1)
           echo "main_tag=$MAIN" >> $GITHUB_OUTPUT
           echo "dev_tag=$DEV" >> $GITHUB_OUTPUT
 
-  # 第二步：根据 YAML 矩阵进行编译
   build:
     needs: check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # 直接使用 include 平铺，彻底避免合并歧义
       matrix:
-        branch: [reF1nd-main, reF1nd-dev]
-        # 定义笛卡尔积组合
         include:
-          # Android: 仅 arm64
-          - { os: android, arch: arm64, v: "", branch: reF1nd-main }
-          - { os: android, arch: arm64, v: "", branch: reF1nd-dev }
+          # --- reF1nd-main 分支 ---
+          - { branch: reF1nd-main, os: android, arch: arm64, v: "" }
+          - { branch: reF1nd-main, os: linux, arch: amd64, v: "" }
+          - { branch: reF1nd-main, os: linux, arch: amd64, v: v3 }
+          - { branch: reF1nd-main, os: linux, arch: amd64, v: v4 }
+          - { branch: reF1nd-main, os: linux, arch: arm64, v: "" }
+          - { branch: reF1nd-main, os: windows, arch: amd64, v: "" }
+          - { branch: reF1nd-main, os: windows, arch: amd64, v: v3 }
+          - { branch: reF1nd-main, os: windows, arch: amd64, v: v4 }
+          - { branch: reF1nd-main, os: windows, arch: arm64, v: "" }
+          - { branch: reF1nd-main, os: darwin, arch: amd64, v: "" }
+          - { branch: reF1nd-main, os: darwin, arch: arm64, v: "" }
 
-          # Linux: amd64 (兼容, v3, v4) + arm64
-          - { os: linux, arch: amd64, v: "", branch: reF1nd-main }
-          - { os: linux, arch: amd64, v: v3, branch: reF1nd-main }
-          - { os: linux, arch: amd64, v: v4, branch: reF1nd-main }
-          - { os: linux, arch: arm64, v: "", branch: reF1nd-main }
-          - { os: linux, arch: amd64, v: "", branch: reF1nd-dev }
-          - { os: linux, arch: amd64, v: v3, branch: reF1nd-dev }
-          - { os: linux, arch: amd64, v: v4, branch: reF1nd-dev }
-          - { os: linux, arch: arm64, v: "", branch: reF1nd-dev }
-
-          # Windows: 同 Linux
-          - { os: windows, arch: amd64, v: "", branch: reF1nd-main }
-          - { os: windows, arch: amd64, v: v3, branch: reF1nd-main }
-          - { os: windows, arch: amd64, v: v4, branch: reF1nd-main }
-          - { os: windows, arch: arm64, v: "", branch: reF1nd-main }
-          - { os: windows, arch: amd64, v: "", branch: reF1nd-dev }
-          - { os: windows, arch: amd64, v: v3, branch: reF1nd-dev }
-          - { os: windows, arch: amd64, v: v4, branch: reF1nd-dev }
-          - { os: windows, arch: arm64, v: "", branch: reF1nd-dev }
-
-          # MacOS (Darwin): 仅 amd64 + arm64, 无 v3/v4 区分
-          - { os: darwin, arch: amd64, v: "", branch: reF1nd-main }
-          - { os: darwin, arch: arm64, v: "", branch: reF1nd-main }
-          - { os: darwin, arch: amd64, v: "", branch: reF1nd-dev }
-          - { os: darwin, arch: arm64, v: "", branch: reF1nd-dev }
+          # --- reF1nd-dev 分支 ---
+          - { branch: reF1nd-dev, os: android, arch: arm64, v: "" }
+          - { branch: reF1nd-dev, os: linux, arch: amd64, v: "" }
+          - { branch: reF1nd-dev, os: linux, arch: amd64, v: v3 }
+          - { branch: reF1nd-dev, os: linux, arch: amd64, v: v4 }
+          - { branch: reF1nd-dev, os: linux, arch: arm64, v: "" }
+          - { branch: reF1nd-dev, os: windows, arch: amd64, v: "" }
+          - { branch: reF1nd-dev, os: windows, arch: amd64, v: v3 }
+          - { branch: reF1nd-dev, os: windows, arch: amd64, v: v4 }
+          - { branch: reF1nd-dev, os: windows, arch: arm64, v: "" }
+          - { branch: reF1nd-dev, os: darwin, arch: amd64, v: "" }
+          - { branch: reF1nd-dev, os: darwin, arch: arm64, v: "" }
 
     steps:
       - name: Checkout Scripts
@@ -83,29 +74,32 @@ jobs:
           go-version: "stable"
           check-latest: true
 
-      - name: Set Version Tag
+      - name: Build and Package
+        env:
+          MAIN_TAG: ${{ needs.check.outputs.main_tag }}
+          DEV_TAG: ${{ needs.check.outputs.dev_tag }}
         run: |
+          # 内部变量分拣
           if [ "${{ matrix.branch }}" == "reF1nd-main" ]; then
-            echo "TAG=${{ needs.check.outputs.main_tag }}" >> $GITHUB_ENV
+            TAG=$MAIN_TAG
           else
-            echo "TAG=${{ needs.check.outputs.dev_tag }}" >> $GITHUB_ENV
+            TAG=$DEV_TAG
           fi
 
-      - name: Build Core
-        run: bash ../scripts/build.sh ${{ matrix.os }} ${{ matrix.arch }} "${{ matrix.v }}" "$TAG"
-        working-directory: src
+          # 执行编译 (进入 src 目录)
+          cd src
+          bash ../scripts/build.sh ${{ matrix.os }} ${{ matrix.arch }} "${{ matrix.v }}" "$TAG"
 
-      - name: Package
-        run: bash ../scripts/package.sh ${{ matrix.os }} ${{ matrix.arch }} "${{ matrix.v }}" "$TAG" "${{ matrix.branch }}"
-        working-directory: src
+          # 执行包装
+          bash ../scripts/package.sh ${{ matrix.os }} ${{ matrix.arch }} "${{ matrix.v }}" "$TAG" "${{ matrix.branch }}"
 
-      - name: Upload to Branch Artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: assets-${{ matrix.branch }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.v }}
+          # 注意：Artifact Name 必须唯一，防止并发冲突
+          name: bin-${{ matrix.branch }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.v }}
           path: output/*
 
-  # 第三步：分发到不同的 Release
   publish:
     needs: [check, build]
     runs-on: ubuntu-latest
@@ -113,14 +107,15 @@ jobs:
       matrix:
         branch: [reF1nd-main, reF1nd-dev]
     steps:
-      - name: Download Branch Assets
+      - name: Download Assets
         uses: actions/download-artifact@v4
         with:
-          pattern: assets-${{ matrix.branch }}-*
+          # 根据前缀下载该分支的所有产物
+          pattern: bin-${{ matrix.branch }}-*
           path: dist
           merge-multiple: true
 
-      - name: Set Release Tag
+      - name: Set Env
         run: |
           if [ "${{ matrix.branch }}" == "reF1nd-main" ]; then
             echo "REL_TAG=${{ needs.check.outputs.main_tag }}" >> $GITHUB_ENV
@@ -128,12 +123,10 @@ jobs:
             echo "REL_TAG=${{ needs.check.outputs.dev_tag }}-dev" >> $GITHUB_ENV
           fi
 
-      - name: Create Branch Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.REL_TAG }}
           name: sing-box reF1nd [${{ matrix.branch }}]
-          body: |
-            Automated build for ${{ matrix.branch }}
-            Source: https://github.com/reF1nd/sing-box/tree/${{ matrix.branch }}
+          body: "Source Branch: ${{ matrix.branch }}"
           files: dist/*
