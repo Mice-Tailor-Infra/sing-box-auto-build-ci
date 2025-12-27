@@ -23,7 +23,9 @@ fi
 LATEST_TIME=$(curl -sL "https://api.github.com/repos/${FORK_REPO}/commits?sha=${FORK_BRANCH}" | \
     jq -r '.[0].commit.committer.date' | xargs -I {} date -d '{}' '+%Y-%m-%d')
 
-echo "latest_tag=${LATEST_STABLE_TAG}" >> "$GITHUB_OUTPUT"
+# 使用 tr 强行剔除可能存在的换行或回车符
+CLEAN_TAG=$(echo "$LATEST_STABLE_TAG" | tr -d '\r\n ')
+echo "latest_tag=${CLEAN_TAG}" >> "$GITHUB_OUTPUT"
 echo "latest_time=${LATEST_TIME}" >> "$GITHUB_OUTPUT"
 
 # 4. 判断逻辑

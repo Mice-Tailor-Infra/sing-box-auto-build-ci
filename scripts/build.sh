@@ -24,4 +24,4 @@ OUTPUT_NAME="sing-box"
 [ "$GOOS" == "windows" ] && OUTPUT_NAME="sing-box.exe"
 
 echo "开始构建: $GOOS $GOARCH $GOAMD64_LEVEL"
-go build -v -trimpath -tags "$BUILD_TAGS" -ldflags "$LDFLAGS" -o "$OUTPUT_NAME" ./cmd/sing-box
+go build -v -x -trimpath -tags "$BUILD_TAGS" -ldflags "$LDFLAGS" -o "$OUTPUT_NAME" ./cmd/sing-box 2>&1

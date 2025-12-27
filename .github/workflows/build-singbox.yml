@@ -44,7 +44,7 @@ jobs:
       - name: Checkout Scripts
         uses: actions/checkout@v4
         with:
-          path: '.'
+          path: "."
 
       # 2. 将上游源码拉取到 src/ 目录下，防止覆盖 scripts/
       - name: Checkout Upstream
@@ -61,10 +61,19 @@ jobs:
 
       # 3. 进入 src 目录进行编译，此时脚本就在 ../scripts/ 里
       - name: Build Core
-        run: bash ../scripts/build.sh ${{ matrix.os }} ${{ matrix.arch }} "${{ matrix.v }}" ${{ needs.check.outputs.latest_tag }}
+        # 改用环境变量传递，脚本内部改为读取环境变量
+        env:
+          TARGET_OS: ${{ matrix.os }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          TARGET_V: ${{ matrix.v }}
+          VERSION_TAG: ${{ needs.check.outputs.latest_tag }}
+        run: |
+          # 调试打印：如果这里是空的，说明 check 任务的 outputs 映射写错了
+          echo "Debug: VERSION_TAG is [${VERSION_TAG}]" 
+          bash ../scripts/build.sh "$TARGET_OS" "$TARGET_ARCH" "$TARGET_V" "$VERSION_TAG"
         working-directory: src
 
-      # 4. 打包，注意 working-directory 保持在 src 
+      # 4. 打包，注意 working-directory 保持在 src
       - name: Package
         run: bash ../scripts/package.sh ${{ matrix.os }} ${{ matrix.arch }} "${{ matrix.v }}" ${{ needs.check.outputs.latest_tag }}
         working-directory: src
