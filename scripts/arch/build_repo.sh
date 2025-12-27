@@ -66,9 +66,35 @@ for ARCH in "x86_64" "aarch64"; do
     cd ../..
 done
 
-# 提交
+# 5. 提交回库（增加重试逻辑）
 cd repo_dest
 git config user.name "CI-Bot"
 git config user.email "ci@cagedbird.top"
 git add .
-git diff --quiet && git diff --staged --quiet || (git commit -m "Update $PKGNAME to $VERSION" && git push)
+
+# 检查是否有改动
+if git diff --quiet && git diff --staged --quiet; then
+    echo "No changes to commit"
+else
+    git commit -m "Update $PKGNAME to $VERSION"
+    
+    # 🎖️ 核心：使用循环进行重试，解决并发冲突
+    MAX_RETRIES=5
+    RETRY_COUNT=0
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        # 尝试推送。如果失败，说明有竞争，先 pull --rebase 再试
+        if git push origin main; then
+            echo "✅ 成功入库！"
+            break
+        else
+            echo "⚠️ 检测到并发冲突，正在尝试 Rebase 重试 ($((RETRY_COUNT+1))/$MAX_RETRIES)..."
+            git pull --rebase origin main
+            RETRY_COUNT=$((RETRY_COUNT+1))
+        fi
+    done
+
+    if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+        echo "❌ 经过 $MAX_RETRIES 次重试依然失败，请检查仓库权限或是否存在死锁。"
+        exit 1
+    fi
+fi
