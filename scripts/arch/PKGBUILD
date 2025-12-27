@@ -12,6 +12,7 @@ license=('GPL3')
 provides=('sing-box')
 conflicts=('sing-box' 'sing-box-bin' 'sing-box-git' 'sing-box-beta' 'sing-box-ref1nd' 'sing-box-ref1nd-dev')
 depends=('glibc')
+options=('!debug')
 # 我们不需要 go 环境，因为二进制已经编译好了
 makedepends=('git') 
 
