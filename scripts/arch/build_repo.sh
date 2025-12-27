@@ -4,7 +4,7 @@ set -e
 # 参数定义
 BRANCH=$1      # reF1nd-main 或 reF1nd-dev
 VERSION=$2     # v1.12.14
-BINARY_DIR=$3  # Artifacts 存放路径
+BINARY_DIR=$3  # Artifacts 存放路径 (例如 $(pwd)/artifacts)
 REPO_TOKEN=$4  # 你的 Fine-grained PAT
 
 REPO_NAME="cagedbird-repo"
@@ -35,36 +35,49 @@ ARCHS=("x86_64" "aarch64")
 for ARCH in "${ARCHS[@]}"; do
     echo "📦 Packaging for $ARCH..."
     
-    # 匹配对应的二进制产物
+    # 4.1 寻找对应的 Artifact 目录
     if [ "$ARCH" == "x86_64" ]; then
-        # 优先使用 v3，没有则回退
-        BIN_SRC="$BINARY_DIR/bin-$BRANCH-linux-amd64v3/sing-box"
-        [ ! -f "$BIN_SRC" ] && BIN_SRC="$BINARY_DIR/bin-$BRANCH-linux-amd64/sing-box"
+        # 统帅，我们优先拿 v3 版本，找不到再拿普通的
+        ART_DIR="$BINARY_DIR/bin-$BRANCH-linux-amd64v3"
+        [ ! -d "$ART_DIR" ] && ART_DIR="$BINARY_DIR/bin-$BRANCH-linux-amd64"
     else
-        BIN_SRC="$BINARY_DIR/bin-$BRANCH-linux-arm64/sing-box"
+        ART_DIR="$BINARY_DIR/bin-$BRANCH-linux-arm64"
     fi
 
-    [ ! -f "$BIN_SRC" ] && { echo "⚠️ 跳过 $ARCH: 找不到二进制"; continue; }
+    # 4.2 核心修复：从压缩包里提取二进制
+    # 在这个目录下搜索 .tar.gz 文件
+    TAR_PATH=$(find "$ART_DIR" -name "*.tar.gz" | head -n 1)
+    
+    if [ ! -f "$TAR_PATH" ]; then
+        echo "⚠️ 跳过 $ARCH: 在 $ART_DIR 找不到压缩包"
+        continue
+    fi
 
-    # 准备 makepkg 目录
+    echo "📂 正在解压: $(basename "$TAR_PATH")"
+    # 解压到当前构建目录，这会产生一个名为 sing-box 的二进制
+    tar -xzf "$TAR_PATH" -C .
+    BIN_SRC="./sing-box"
+
+    # 4.3 准备 makepkg 目录
     BUILD_DIR="build_$ARCH"
     mkdir -p "$BUILD_DIR"
     cp ../scripts/arch/PKGBUILD "$BUILD_DIR/PKGBUILD"
     cp -r src_aux "$BUILD_DIR/"
-    cp "$BIN_SRC" "$BUILD_DIR/sing-box-bin"
+    # 把刚才解压出来的二进制搬进去
+    mv "$BIN_SRC" "$BUILD_DIR/sing-box-bin"
     
-    # 注入变量到 PKGBUILD
+    # 注入变量
     sed -i "s/_PKGNAME_/$PKGNAME/g" "$BUILD_DIR/PKGBUILD"
     sed -i "s/_PKGVER_/$CLEAN_VER/g" "$BUILD_DIR/PKGBUILD"
     sed -i "s/_ARCH_OPTS_/$ARCH/g" "$BUILD_DIR/PKGBUILD"
 
-    # 执行打包 (在容器内通常需要授权 nobody 用户)
+    # 执行打包
     chmod -R 777 "$BUILD_DIR"
     cd "$BUILD_DIR"
-    # 使用 --nodeps 因为我们已经有二进制了，不需要安装 go
+    # --nodeps 是因为我们已经是二进制了，不需要 Go 依赖
     sudo -u nobody CARCH=$ARCH makepkg -f --nodeps
     
-    # 将结果拷贝到仓库目录
+    # 更新仓库
     cd ..
     mkdir -p "repo_dest/$ARCH"
     cp "$BUILD_DIR"/*.pkg.tar.zst "repo_dest/$ARCH/"
@@ -80,5 +93,5 @@ cd repo_dest
 git config user.name "CI-Bot"
 git config user.email "ci@cagedbird.top"
 git add .
-git commit -m "Update $PKGNAME to $VERSION" || echo "No changes to commit"
-git push
+# 只有有变化时才 commit，防止 CI 报错
+git diff --quiet && git diff --staged --quiet || (git commit -m "Update $PKGNAME to $VERSION" && git push)
