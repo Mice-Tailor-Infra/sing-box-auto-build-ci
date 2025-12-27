@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "0 19 * * *" # 北京时间凌晨 3:00
 
+permissions:
+  contents: write # 必须赋予写权限，否则无法创建 Release 和上传文件
+
 jobs:
   check:
     runs-on: ubuntu-latest
