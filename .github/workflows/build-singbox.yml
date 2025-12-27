@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # 🎖️ 统帅指令：禁止并联，强制串行
+      max-parallel: 1
       # 直接使用 include 平铺，彻底避免合并歧义
       matrix:
         include:
@@ -159,7 +161,7 @@ jobs:
         branch: [reF1nd-main, reF1nd-dev]
     steps:
       - uses: actions/checkout@v4
-      
+
       # 下载该分支的所有 Artifacts
       - name: Download Artifacts
         uses: actions/download-artifact@v4

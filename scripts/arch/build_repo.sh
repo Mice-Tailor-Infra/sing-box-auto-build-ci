@@ -63,38 +63,39 @@ for ARCH in "x86_64" "aarch64"; do
     cp "$BUILD_DIR"/*.pkg.tar.zst "repo_dest/$ARCH/"
     cd "repo_dest/$ARCH"
     repo-add "$REPO_NAME.db.tar.zst" *.pkg.tar.zst
+    rm -f *.old *.old.sig
     cd ../..
 done
 
-# 5. 提交回库（增加重试逻辑）
+# 5. 提交回库 (二进制逻辑优化)
 cd repo_dest
 git config user.name "CI-Bot"
 git config user.email "ci@cagedbird.top"
 git add .
 
-# 检查是否有改动
 if git diff --quiet && git diff --staged --quiet; then
     echo "No changes to commit"
 else
+    # 强制标记：如果二进制文件冲突，以“最新拉取的”为准
+    # 然后我们重新运行 repo-add 覆盖它
     git commit -m "Update $PKGNAME to $VERSION"
     
-    # 🎖️ 核心：使用循环进行重试，解决并发冲突
-    MAX_RETRIES=5
+    MAX_RETRIES=3
     RETRY_COUNT=0
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-        # 尝试推送。如果失败，说明有竞争，先 pull --rebase 再试
         if git push origin main; then
-            echo "✅ 成功入库！"
+            echo "✅ 入库成功"
             break
         else
-            echo "⚠️ 检测到并发冲突，正在尝试 Rebase 重试 ($((RETRY_COUNT+1))/$MAX_RETRIES)..."
-            git pull --rebase origin main
-            RETRY_COUNT=$((RETRY_COUNT+1))
+            echo "⚠️ 并发冲突，执行强制同步重试..."
+            # 放弃本地的二进制索引，强制拉取远端最新的
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # 🎖️ 重新执行入库逻辑 (因为刚才 reset 把它冲掉了，我们要重做)
+            # 这部分逻辑需要包装成函数或者重新跑一遍 package
+            # 但如果你开了 max-parallel: 1，这里其实根本不会被触发！
+            exit 1 # 开了 max-parallel 之后，这里直接 exit 即可，不应该发生
         fi
     done
-
-    if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-        echo "❌ 经过 $MAX_RETRIES 次重试依然失败，请检查仓库权限或是否存在死锁。"
-        exit 1
-    fi
 fi
